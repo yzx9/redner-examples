@@ -3,24 +3,6 @@ import pyredner
 import numpy as np
 import torch
 import scipy.ndimage.filters
-import urllib.request
-import os
-import zipfile
-from shutil import copyfile
-import random
-
-if not os.path.isdir('scenes/living-room-3'):
-    print('Scene file not found, downloading')
-    filedata = urllib.request.urlretrieve(
-        'https://benedikt-bitterli.me/resources/mitsuba/living-room-3.zip', 'living-room-3.zip')
-    print('Unzipping living-room-3.zip')
-    zip_ref = zipfile.ZipFile('living-room-3.zip', 'r')
-    zip_ref.extractall('scenes/')
-    print('Copying scene file')
-    copyfile('scenes/living-room-3-scene.xml',
-             'scenes/living-room-3/scene.xml')
-    print('Removing zip file')
-    os.remove('living-room-3.zip')
 
 # Optimize for material
 
@@ -29,7 +11,7 @@ pyredner.set_use_gpu(torch.cuda.is_available())
 
 # Load the scene from a Mitsuba scene file
 print('scene loading...')
-scene = pyredner.load_mitsuba('scenes/living-room-3/scene.xml')
+scene = pyredner.load_mitsuba('scenes/living-room-3-without-texture/scene.xml')
 print('scene loaded')
 
 max_bounces = 6
@@ -55,18 +37,25 @@ for li, l in enumerate(scene.area_lights):
     light_intensitys.append(var)
     l.intensity = var
 
-material_vars = []
-materials = []
-for si, s in enumerate(scene.shapes):
-    texels = scene.materials[s.material_id].diffuse_reflectance.texels
-    r = (random.random() - 0.5) * 0.5
-    var = texels + torch.tensor((r, r, r), device=pyredner.get_device())
-    m = pyredner.Material(diffuse_reflectance=var.abs())
-    s.material_id = len(materials)
-    material_vars.append(var)
-    materials.append(m)
+materials_diffuse = []
+materials_specular = []
+materials_roughness = []
+for mi, m in enumerate(scene.materials):
+    diffuse = torch.tensor(
+        [0.5, 0.5, 0.5], device=pyredner.get_device(), requires_grad=True)
+    specular = torch.tensor(
+        [0.5, 0.5, 0.5], device=pyredner.get_device(), requires_grad=True)
+    roughness = torch.tensor(
+        [0.5], device=pyredner.get_device(), requires_grad=True)
 
-scene.materials = materials
+    scene.materials[mi] = pyredner.Material(
+        diffuse_reflectance=diffuse.abs(),
+        specular_reflectance=specular.abs(),
+        roughness=roughness.abs())
+    materials_diffuse.append(diffuse)
+    materials_specular.append(specular)
+    materials_roughness.append(roughness)
+
 args = pyredner.RenderFunction.serialize_scene(
     scene=scene,
     num_samples=512,
@@ -80,11 +69,17 @@ pyredner.imwrite(img.cpu(), 'results/living_room_material/init.png')
 diff = torch.abs(target - img)
 pyredner.imwrite(diff.cpu(), 'results/living_room_material/init_diff.png')
 
-
-optimizer = torch.optim.Adam(light_intensitys+material_vars, lr=5e-1)
+optimizer = torch.optim.Adam(
+    light_intensitys+materials_diffuse+materials_specular+materials_roughness, lr=5e-1)
 for t in range(10000):
     print('iteration:', t)
     optimizer.zero_grad()
+
+    for mi, m in enumerate(scene.materials):
+        scene.materials[mi] = pyredner.Material(
+            diffuse_reflectance=materials_diffuse[mi].abs(),
+            specular_reflectance=materials_specular[mi].abs(),
+            roughness=materials_roughness[mi].abs())
 
     args = pyredner.RenderFunction.serialize_scene(
         scene=scene,
