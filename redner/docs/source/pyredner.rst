@@ -1,4 +1,0 @@
-pyredner
-========
-.. autoapimodule:: pyredner
-   :members:

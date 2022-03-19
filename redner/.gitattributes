@@ -1,4 +1,0 @@
-src/ltc.inc linguist-generated=true
-tutorials/*.ipynb linguist-detectable=false
-src/miniz.* linguist-vendored
-fit_ltc/* linguist-vendored
