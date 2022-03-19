@@ -1,0 +1,3 @@
+[submodule "redner"]
+	path = redner
+	url = https://github.com/BachiLi/redner.git
